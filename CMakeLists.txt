@@ -36,13 +36,15 @@ set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 
 FetchContent_MakeAvailable(googletest)
 
-
 set(SOURCES
   src/main.cc
   src/instruction.cc
 )
 
 add_library(computer_enhance ${SOURCES})
+target_link_libraries(
+  computer_enhance
+)
 
 set(TEST_SOURCES
   test/computer_enhance_test.cc
@@ -52,10 +54,6 @@ add_executable(
   computer_enhance_test
   ${TEST_SOURCES}
 )
-# target_link_libraries(
-#   nurbsbook
-#   Eigen3::Eigen
-# )
 target_link_libraries(
   computer_enhance_test
   GTest::gtest_main

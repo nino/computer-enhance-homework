@@ -23,19 +23,25 @@ class Operand {
     auto operator=(Operand&&) -> Operand& = delete;
     virtual ~Operand() = default;
 
-    [[nodiscard]] virtual auto serialize() const -> std::string = 0;
-
-    static auto
-    parse(std::span<uint8_t> const& data) -> std::unique_ptr<Operand> = delete;
+    /**
+     * Parse one operand from some compiled machine code. Return the parsed
+     * operand and the unparsed remainder of the machine code.
+     *
+     * @throws If the machine code is malformed
+     */
+    static auto decode(std::span<uint8_t> const& data)
+        -> std::pair<std::unique_ptr<Operand>, std::span<uint8_t> const>;
 };
 
-class OpRegister : public Operand {
+class Register_operand : public Operand {
   public:
-    explicit OpRegister(int value_);
-    [[nodiscard]] auto serialize() const -> std::string override;
+    explicit Register_operand(std::string name_);
+
+    /* static auto parse(std::span<uint8_t> const& data) */
+    /*     -> std::pair<std::unique_ptr<Operand>, std::span<uint8_t> const>; */
 
   private:
-    int value;
+    std::string name;
 };
 
 class Instruction {
@@ -47,10 +53,14 @@ class Instruction {
     auto operator=(Instruction&&) -> Instruction& = delete;
     virtual ~Instruction() = default;
 
-    [[nodiscard]] virtual auto serialize() const -> std::string = 0;
+    /* [[nodiscard]] virtual auto serialize() const -> std::string = 0; */
 
-    static auto parse(std::span<uint8_t> const& data)
-        -> std::unique_ptr<Instruction> = delete;
+    static auto decode(std::span<uint8_t const> const& data)
+        -> std::pair<std::unique_ptr<Instruction>,
+                     std::span<uint8_t const> const>;
+
+    static auto parse(std::string_view const& assembly)
+        -> std::pair<std::unique_ptr<Instruction>, std::string_view const>;
 };
 
 class Mov : public Instruction {
@@ -60,12 +70,12 @@ class Mov : public Instruction {
     std::unique_ptr<Operand> dest;
 
   public:
-    Mov(std::unique_ptr<Operand> src, std::unique_ptr<Operand> dest);
+    explicit Mov(std::unique_ptr<Operand> src, std::unique_ptr<Operand> dest);
 
-    [[nodiscard]] auto serialize() const -> std::string override;
+    /* [[nodiscard]] auto serialize() const -> std::string override; */
 
-    static auto
-    parse(std::span<uint8_t const> const& data) -> std::unique_ptr<Mov>;
+    /* static auto */
+    /* parse(std::span<uint8_t const> const& data) -> std::unique_ptr<Mov>; */
 };
 
 }; // namespace computer_enhance
