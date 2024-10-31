@@ -3,8 +3,8 @@ class Instruction {
    * Decode one instruction. Return the decoded instruction and the remainder of
    * the input data, so the rest of the data can be decoded.
    */
-  static decode(_data: Uint8Array): [Instruction, Uint8Array] {
-    throw new Error("not implemented");
+  static decode(data: Uint8Array): [Instruction, Uint8Array] {
+    if (data.length === 0) throw new TypeError("No data");
   }
 }
 
@@ -17,7 +17,7 @@ export class Mov extends Instruction {
    * return it and the remainder of the machine code. If anything goes wrong,
    * throw.
    */
-  static decode(data: Uint8Array): [Mov, Uint8Array] {
+  static override decode(data: Uint8Array): [Mov, Uint8Array] {
     return [new Mov(), data];
   }
 }
@@ -25,15 +25,13 @@ export class Mov extends Instruction {
 /**
  * Decode 8086 machine code instructions and return an array of instructions.
  */
-export function decode_instructions(data: Uint8Array): Array<Instruction> {
+export function* decode_instructions(data: Uint8Array): Generator<Instruction> {
   let rest = data;
-  const instructions: Array<Instruction> = [];
   while (rest.length > 0) {
     const [instruction, newRest] = Instruction.decode(data);
-    instructions.push(instruction);
+    yield instruction;
     rest = newRest;
   }
-  return instructions;
 }
 
 if (import.meta.main) {
