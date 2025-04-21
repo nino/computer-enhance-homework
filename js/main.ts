@@ -1,7 +1,10 @@
 type Operand =
   | { type: "IMMEDIATE"; value: Uint8Array }
-  | { type: "MEMORY"; value: bigint }
-  | { type: "REGISTER"; name: string };
+  | { type: "REGISTER"; name: string }
+  | { type: "MEMORY_ADDRESS"; value: bigint }
+  | { type: "EFFECTIVE_ADDRESS"; registers: string[] }
+  | { type: "EFFECTIVE_ADDRESS+8"; registers: string[]; disp: number }
+  | { type: "EFFECTIVE_ADDRESS+16"; registers: string[]; disp: number };
 
 type InstructionName = "MOV" | "ADD";
 
@@ -11,36 +14,103 @@ type Instruction = {
   rightOperand?: Operand;
 };
 
+function todo(): never {
+  throw new Error("TODO");
+}
+
+function shouldNeverHappen(): never {
+  throw new Error("This should never happen");
+}
+
+function maybeFlipOperands(
+  doFlip: boolean,
+  instruction: Instruction,
+): Instruction {
+  if (doFlip) {
+    return {
+      name: instruction.name,
+      leftOperand: instruction.rightOperand,
+      rightOperand: instruction.leftOperand,
+    };
+  }
+  return instruction;
+}
+
+function decodeMov(
+  data: Uint8Array,
+  flip: boolean,
+  isWord: boolean,
+): [Instruction, Uint8Array] {
+  const f_mod = (data[1] & 0b11000000) >> 6;
+  const f_reg = (data[1] & 0b00111000) >> 3;
+  const register = parseRegister(f_reg, isWord);
+  const f_rm = data[1] & 0b00000111;
+  switch (f_mod) {
+    case 0b00: // Memory mode (no displacement, except if R/M=110, then 16-bit displacement)
+    {
+      todo()
+      if (f_rm === 0b110) {
+      } else {
+      }
+      break;
+    }
+    case 0b01: // Memory mode (8-bit displacement)
+      todo();
+      break;
+    case 0b10: // Memory mode (16-bit displacement)
+      todo();
+      break;
+    case 0b11: // Register mode (no displacement)
+      return [
+        maybeFlipOperands(flip, {
+          name: "MOV",
+          leftOperand: { type: "REGISTER", name: register },
+          rightOperand: { type: "REGISTER", name: parseRegister(f_rm, isWord) },
+        }),
+        data.slice(2),
+      ];
+    default:
+      shouldNeverHappen();
+  }
+}
+
 /**
  * Decode one instruction. Return the decoded instruction and the remainder of
  * the input data, so the rest of the data can be decoded.
  */
 function decodeInstruction(data: Uint8Array): [Instruction, Uint8Array] {
   if (data.length === 0) throw new TypeError("No data");
-  const flipOperands = parseIsFlipped(data[0]);
-  const instruction = {
-    name: parseInstructionName(data[0]),
-  };
-
   if ((data[0] & 0b11111100) === 0b10001000) {
-    return decodeMovMemoryOrRegisterToOrFromRegister(data);
+    const flip = Boolean(data[0] & 0b00000010);
+    const isWord = Boolean(data[0] & 0b00000001);
+    return decodeMov(data, flip, isWord);
   }
 
-  throw new Error("Unrecognised opcode");
+  throw new Error(`not implemented or bad opcode ${data[0].toString(2)}`);
 }
 
-function parseIsFlipped(bits: number): boolean {
-  return (bits & 0b11111110) === 0b10001010 ||
-    (bits & 0b1111111) === 0b00000010;
-}
-
-export function parseInstructionName(bits: number): InstructionName {
-  const isMov = (bits & 0b11111100) === 0b10001000 ||
-    (bits & 0b11111110) === 0b11000110 || (bits & 0b11110000) === 0b10110000;
-  if (isMov) {
-    return "MOV";
+/** Returns register names */
+function parseEffectiveAddress(bits: number): string[] {
+  switch (bits) {
+    case 0b000:
+      return ["BX", "SI"];
+    case 0b001:
+      return ["BX", "DI"];
+    case 0b010:
+      return ["BP", "SI"];
+    case 0b011:
+      return ["BP", "DI"];
+    case 0b100:
+      return ["SI"];
+    case 0b101:
+      return ["DI"];
+    case 0b110:
+      return ["BP"];
+    case 0b111:
+      return ["BX"];
+    default:
+      shouldNeverHappen();
   }
-  throw new Error("Unrecognised opcode");
 }
 
 function parseRegister(bits: number, isWord: boolean): string {
@@ -67,30 +137,6 @@ function parseRegister(bits: number, isWord: boolean): string {
   }
 }
 
-/** MOV instruction: Memory/register to/from register. */
-const parsers = {
-  0b1001000: function decodeMovByteMemoryFromRegister(
-    data: Uint8Array,
-  ): [Instruction, Uint8Array] {
-
-  },
-  0b1001010: function decodeMovByteMemoryToRegister(
-    data: Uint8Array,
-  ): [Instruction, Uint8Array] {
-
-  },
-  0b1001001: function decodeMovWordMemoryFromRegister(
-    data: Uint8Array,
-  ): [Instruction, Uint8Array] {
-
-  },
-  0b1001011: function decodeMovWordMemoryToRegister(
-    data: Uint8Array,
-  ): [Instruction, Uint8Array] {
-
-  }
-}
-
 /**
  * Decode 8086 machine code and yield each instruction.
  */
@@ -100,6 +146,7 @@ export function* decode_instructions(
   let rest = data;
   while (rest.length > 0) {
     const [instruction, newRest] = decodeInstruction(rest);
+    console.log({ instruction })
     yield instruction;
     rest = newRest;
   }
