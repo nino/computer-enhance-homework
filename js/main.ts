@@ -162,11 +162,11 @@ export function stringify_operand(operand: Operand): string {
 
 export function stringify_instruction(instruction: Instruction): string {
   const operands = [];
-  if (instruction.leftOperand) {
-    operands.push(stringify_operand(instruction.leftOperand));
-  }
   if (instruction.rightOperand) {
     operands.push(stringify_operand(instruction.rightOperand));
+  }
+  if (instruction.leftOperand) {
+    operands.push(stringify_operand(instruction.leftOperand));
   }
   return [instruction.name, operands.join(", ")].join(" ");
 }
