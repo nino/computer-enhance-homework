@@ -1,5 +1,5 @@
 type Operand =
-  | { type: "IMMEDIATE"; value: Uint8Array }
+  | { type: "IMMEDIATE"; value: bigint }
   | { type: "REGISTER"; name: string }
   | { type: "MEMORY_ADDRESS"; value: bigint }
   | { type: "EFFECTIVE_ADDRESS"; registers: string[] }
@@ -46,9 +46,8 @@ function decodeMov(
   const register = parseRegister(f_reg, isWord);
   const f_rm = data[1] & 0b00000111;
   switch (f_mod) {
-    case 0b00: // Memory mode (no displacement, except if R/M=110, then 16-bit displacement)
-    {
-      todo()
+    case 0b00: { // Memory mode (no displacement, except if R/M=110, then 16-bit displacement)
+      todo();
       if (f_rm === 0b110) {
       } else {
       }
@@ -140,16 +139,36 @@ function parseRegister(bits: number, isWord: boolean): string {
 /**
  * Decode 8086 machine code and yield each instruction.
  */
-export function* decode_instructions(
-  data: Uint8Array,
-): Generator<Instruction> {
+export function* decode_instructions(data: Uint8Array): Generator<Instruction> {
   let rest = data;
   while (rest.length > 0) {
     const [instruction, newRest] = decodeInstruction(rest);
-    console.log({ instruction })
+    console.log({ instruction });
     yield instruction;
     rest = newRest;
   }
+}
+
+export function stringify_operand(operand: Operand): string {
+  switch (operand.type) {
+    case "IMMEDIATE":
+      return operand.value.toString();
+    case "REGISTER":
+      return operand.name;
+    default:
+      todo();
+  }
+}
+
+export function stringify_instruction(instruction: Instruction): string {
+  const operands = [];
+  if (instruction.leftOperand) {
+    operands.push(stringify_operand(instruction.leftOperand));
+  }
+  if (instruction.rightOperand) {
+    operands.push(stringify_operand(instruction.rightOperand));
+  }
+  return [instruction.name, operands.join(", ")].join(" ");
 }
 
 if (import.meta.main) {
