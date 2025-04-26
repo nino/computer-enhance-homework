@@ -143,7 +143,6 @@ export function* decode_instructions(data: Uint8Array): Generator<Instruction> {
   let rest = data;
   while (rest.length > 0) {
     const [instruction, newRest] = decodeInstruction(rest);
-    console.log({ instruction });
     yield instruction;
     rest = newRest;
   }

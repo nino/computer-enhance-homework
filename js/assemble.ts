@@ -5,10 +5,8 @@
 export async function assemble(assembly: string): Promise<Uint8Array> {
   const tmp_source = await Deno.makeTempFile({ suffix: ".asm" });
   const tmp_output = await Deno.makeTempFile({ suffix: ".bin" });
-  console.log({ tmp_source, tmp_output });
 
   await Deno.writeTextFile(tmp_source, "bits 16\n\n" + assembly);
-  console.log({ assembly });
 
   try {
     const process = new Deno.Command("nasm", {
