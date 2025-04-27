@@ -10,8 +10,10 @@ type InstructionName = "MOV" | "ADD";
 
 type Instruction = {
   name: InstructionName;
-  leftOperand?: Operand;
-  rightOperand?: Operand;
+  /** Actually this is the right operand */
+  right_operand?: Operand;
+  /** Actually this is the left operand */
+  left_operand?: Operand;
 };
 
 function todo(): never {
@@ -22,21 +24,21 @@ function shouldNeverHappen(): never {
   throw new Error("This should never happen");
 }
 
-function maybeFlipOperands(
+function maybe_flip_operands(
   doFlip: boolean,
   instruction: Instruction,
 ): Instruction {
   if (doFlip) {
     return {
       name: instruction.name,
-      leftOperand: instruction.rightOperand,
-      rightOperand: instruction.leftOperand,
+      right_operand: instruction.left_operand,
+      left_operand: instruction.right_operand,
     };
   }
   return instruction;
 }
 
-function decodeMov(
+function decode_mov_register_and_memory(
   data: Uint8Array,
   flip: boolean,
   isWord: boolean,
@@ -61,10 +63,13 @@ function decodeMov(
       break;
     case 0b11: // Register mode (no displacement)
       return [
-        maybeFlipOperands(flip, {
+        maybe_flip_operands(flip, {
           name: "MOV",
-          leftOperand: { type: "REGISTER", name: register },
-          rightOperand: { type: "REGISTER", name: parseRegister(f_rm, isWord) },
+          right_operand: { type: "REGISTER", name: register },
+          left_operand: {
+            type: "REGISTER",
+            name: parseRegister(f_rm, isWord),
+          },
         }),
         data.slice(2),
       ];
@@ -73,16 +78,76 @@ function decodeMov(
   }
 }
 
+function decode_mov_immediate_to_reg_or_mem(
+  data: Uint8Array,
+  isWord: boolean,
+): [Instruction, Uint8Array] {
+  const f_mod = (data[1] & 0b11000000) >> 6;
+  const f_rm = data[1] & 0b00000111;
+
+  switch (f_mod) {
+    case 0b00: { // Memory mode (no displacement, except if R/M=110, then 16-bit displacement)
+      return todo();
+      if (f_rm === 0b110) {
+      } else {
+      }
+      break;
+    }
+    case 0b01: // Memory mode (8-bit displacement)
+      return todo();
+    case 0b10: // Memory mode (16-bit displacement)
+      return todo();
+    case 0b11: // Register mode (no displacement)
+      return todo();
+      // return [
+      //   {
+      //     name: "MOV",
+      //     right_operand: { type: "REGISTER", name: register },
+      //     left_operand: { type: "REGISTER", name:  },
+      //   },
+      //   data.slice(2),
+      // ];
+      // this isn't really used
+    default:
+      return shouldNeverHappen();
+  }
+}
+
+function decodeMovImmediateToRegister(
+  data: Uint8Array,
+  isWord: boolean,
+): [Instruction, Uint8Array] {
+  const register = parseRegister(data[0] & 0b111, isWord);
+  let value = data[1];
+  if (isWord) {
+    value <<= 8;
+    value += data[2];
+  }
+  return [{
+    name: "MOV",
+    right_operand: { type: "IMMEDIATE", value: BigInt(value) },
+    left_operand: { type: "REGISTER", name: register },
+  }, data.slice(isWord ? 3 : 2)];
+}
+
 /**
  * Decode one instruction. Return the decoded instruction and the remainder of
  * the input data, so the rest of the data can be decoded.
  */
-function decodeInstruction(data: Uint8Array): [Instruction, Uint8Array] {
+function decode_instruction(data: Uint8Array): [Instruction, Uint8Array] {
   if (data.length === 0) throw new TypeError("No data");
   if ((data[0] & 0b11111100) === 0b10001000) {
     const flip = Boolean(data[0] & 0b00000010);
     const isWord = Boolean(data[0] & 0b00000001);
-    return decodeMov(data, flip, isWord);
+    return decode_mov_register_and_memory(data, flip, isWord);
+  }
+  if ((data[0] & 0b11111110) === 0b11000110) {
+    const isWord = Boolean(data[0] & 0b00000001);
+    return decode_mov_immediate_to_reg_or_mem(data, isWord);
+  }
+  if ((data[0] & 0b11110000) === 0b10110000) {
+    const isWord = Boolean(data[0] & 0b00001000);
+    return decodeMovImmediateToRegister(data, isWord);
   }
 
   throw new Error(`not implemented or bad opcode ${data[0].toString(2)}`);
@@ -108,7 +173,7 @@ function parseEffectiveAddress(bits: number): string[] {
     case 0b111:
       return ["BX"];
     default:
-      shouldNeverHappen();
+      return shouldNeverHappen();
   }
 }
 
@@ -142,7 +207,8 @@ function parseRegister(bits: number, isWord: boolean): string {
 export function* decode_instructions(data: Uint8Array): Generator<Instruction> {
   let rest = data;
   while (rest.length > 0) {
-    const [instruction, newRest] = decodeInstruction(rest);
+    const [instruction, newRest] = decode_instruction(rest);
+    console.log(stringify_instruction(instruction));
     yield instruction;
     rest = newRest;
   }
@@ -154,18 +220,25 @@ export function stringify_operand(operand: Operand): string {
       return operand.value.toString();
     case "REGISTER":
       return operand.name;
+    case "MEMORY_ADDRESS":
+      return todo();
+    case "EFFECTIVE_ADDRESS":
+      return `[${operand.registers.join(" + ")}]`;
+    case "EFFECTIVE_ADDRESS+8":
+    case "EFFECTIVE_ADDRESS+16":
+      return `[${[...operand.registers, operand.disp.toString()].join(" + ")}]`;
     default:
-      todo();
+      return todo();
   }
 }
 
 export function stringify_instruction(instruction: Instruction): string {
   const operands = [];
-  if (instruction.rightOperand) {
-    operands.push(stringify_operand(instruction.rightOperand));
+  if (instruction.left_operand) {
+    operands.push(stringify_operand(instruction.left_operand));
   }
-  if (instruction.leftOperand) {
-    operands.push(stringify_operand(instruction.leftOperand));
+  if (instruction.right_operand) {
+    operands.push(stringify_operand(instruction.right_operand));
   }
   return [instruction.name, operands.join(", ")].join(" ");
 }
