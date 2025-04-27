@@ -11,9 +11,9 @@ type InstructionName = "MOV" | "ADD";
 type Instruction = {
   name: InstructionName;
   /** Actually this is the right operand */
-  right_operand?: Operand;
+  source_operand?: Operand;
   /** Actually this is the left operand */
-  left_operand?: Operand;
+  dest_operand?: Operand;
 };
 
 function todo(): never {
@@ -31,8 +31,8 @@ function maybe_flip_operands(
   if (doFlip) {
     return {
       name: instruction.name,
-      right_operand: instruction.left_operand,
-      left_operand: instruction.right_operand,
+      source_operand: instruction.dest_operand,
+      dest_operand: instruction.source_operand,
     };
   }
   return instruction;
@@ -49,24 +49,68 @@ function decode_mov_register_and_memory(
   const f_rm = data[1] & 0b00000111;
   switch (f_mod) {
     case 0b00: { // Memory mode (no displacement, except if R/M=110, then 16-bit displacement)
-      todo();
       if (f_rm === 0b110) {
+        const mem_addr = data[1] + (data[2] << 8);
+        return [
+          maybe_flip_operands(flip, {
+            name: "MOV",
+            dest_operand: { type: "REGISTER", name: register },
+            source_operand: { type: "MEMORY_ADDRESS", value: BigInt(mem_addr) },
+          }),
+          data.slice(4),
+        ];
       } else {
+        return [
+          maybe_flip_operands(flip, {
+            name: "MOV",
+            source_operand: { type: "REGISTER", name: register },
+            dest_operand: {
+              type: "EFFECTIVE_ADDRESS",
+              registers: parseEffectiveAddress(f_rm),
+            },
+          }),
+          data.slice(2),
+        ];
       }
-      break;
     }
     case 0b01: // Memory mode (8-bit displacement)
-      todo();
-      break;
+    {
+      const disp = data[2];
+      return [
+        maybe_flip_operands(flip, {
+          name: "MOV",
+          source_operand: { type: "REGISTER", name: register },
+          dest_operand: {
+            type: "EFFECTIVE_ADDRESS+8",
+            registers: parseEffectiveAddress(f_rm),
+            disp,
+          },
+        }),
+        data.slice(3),
+      ];
+    }
     case 0b10: // Memory mode (16-bit displacement)
-      todo();
-      break;
+    {
+      const disp = data[2] + (data[3] << 8);
+      return [
+        maybe_flip_operands(flip, {
+          name: "MOV",
+          source_operand: { type: "REGISTER", name: register },
+          dest_operand: {
+            type: "EFFECTIVE_ADDRESS+8",
+            registers: parseEffectiveAddress(f_rm),
+            disp,
+          },
+        }),
+        data.slice(4),
+      ];
+    }
     case 0b11: // Register mode (no displacement)
       return [
         maybe_flip_operands(flip, {
           name: "MOV",
-          right_operand: { type: "REGISTER", name: register },
-          left_operand: {
+          source_operand: { type: "REGISTER", name: register },
+          dest_operand: {
             type: "REGISTER",
             name: parseRegister(f_rm, isWord),
           },
@@ -74,7 +118,7 @@ function decode_mov_register_and_memory(
         data.slice(2),
       ];
     default:
-      shouldNeverHappen();
+      return shouldNeverHappen();
   }
 }
 
@@ -102,8 +146,8 @@ function decode_mov_immediate_to_reg_or_mem(
       // return [
       //   {
       //     name: "MOV",
-      //     right_operand: { type: "REGISTER", name: register },
-      //     left_operand: { type: "REGISTER", name:  },
+      //     source_operand: { type: "REGISTER", name: register },
+      //     dest_operand: { type: "REGISTER", name:  },
       //   },
       //   data.slice(2),
       // ];
@@ -120,13 +164,12 @@ function decodeMovImmediateToRegister(
   const register = parseRegister(data[0] & 0b111, isWord);
   let value = data[1];
   if (isWord) {
-    value <<= 8;
-    value += data[2];
+    value += data[2] << 8;
   }
   return [{
     name: "MOV",
-    right_operand: { type: "IMMEDIATE", value: BigInt(value) },
-    left_operand: { type: "REGISTER", name: register },
+    source_operand: { type: "IMMEDIATE", value: BigInt(value) },
+    dest_operand: { type: "REGISTER", name: register },
   }, data.slice(isWord ? 3 : 2)];
 }
 
@@ -234,11 +277,11 @@ export function stringify_operand(operand: Operand): string {
 
 export function stringify_instruction(instruction: Instruction): string {
   const operands = [];
-  if (instruction.left_operand) {
-    operands.push(stringify_operand(instruction.left_operand));
+  if (instruction.dest_operand) {
+    operands.push(stringify_operand(instruction.dest_operand));
   }
-  if (instruction.right_operand) {
-    operands.push(stringify_operand(instruction.right_operand));
+  if (instruction.source_operand) {
+    operands.push(stringify_operand(instruction.source_operand));
   }
   return [instruction.name, operands.join(", ")].join(" ");
 }
@@ -246,3 +289,4 @@ export function stringify_instruction(instruction: Instruction): string {
 if (import.meta.main) {
   console.log("Hello");
 }
+
