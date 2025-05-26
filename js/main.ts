@@ -6,14 +6,13 @@ type Operand =
   | { type: "EFFECTIVE_ADDRESS+8"; registers: string[]; disp: number }
   | { type: "EFFECTIVE_ADDRESS+16"; registers: string[]; disp: number };
 
-type InstructionName = "MOV" | "ADD";
+type InstructionName = "MOV" | "ADD" | "SUB" | "PUSH";
 
 type Instruction = {
   name: InstructionName;
-  /** Actually this is the right operand */
-  source_operand?: Operand;
-  /** Actually this is the left operand */
+  size_modifier?: "BYTE" | "WORD";
   dest_operand?: Operand;
+  source_operand?: Operand;
 };
 
 function todo(): never {
@@ -22,6 +21,17 @@ function todo(): never {
 
 function shouldNeverHappen(): never {
   throw new Error("This should never happen");
+}
+
+function immediate(val: number | bigint): Operand {
+  return {
+    type: "IMMEDIATE",
+    value: typeof val === "number" ? BigInt(val) : val,
+  };
+}
+
+function reg(name: string): Operand {
+  return { type: "REGISTER", name };
 }
 
 function maybe_flip_operands(
@@ -36,164 +46,6 @@ function maybe_flip_operands(
     };
   }
   return instruction;
-}
-
-function decode_mov_register_and_memory(
-  data: Uint8Array,
-  flip: boolean,
-  isWord: boolean,
-): [Instruction, Uint8Array] {
-  const f_mod = (data[1] & 0b11000000) >> 6;
-  const f_reg = (data[1] & 0b00111000) >> 3;
-  const register = parseRegister(f_reg, isWord);
-  const f_rm = data[1] & 0b00000111;
-  switch (f_mod) {
-    case 0b00: { // Memory mode (no displacement, except if R/M=110, then 16-bit displacement)
-      if (f_rm === 0b110) {
-        const mem_addr = data[1] + (data[2] << 8);
-        return [
-          maybe_flip_operands(flip, {
-            name: "MOV",
-            dest_operand: { type: "REGISTER", name: register },
-            source_operand: { type: "MEMORY_ADDRESS", value: BigInt(mem_addr) },
-          }),
-          data.slice(4),
-        ];
-      } else {
-        return [
-          maybe_flip_operands(flip, {
-            name: "MOV",
-            source_operand: { type: "REGISTER", name: register },
-            dest_operand: {
-              type: "EFFECTIVE_ADDRESS",
-              registers: parseEffectiveAddress(f_rm),
-            },
-          }),
-          data.slice(2),
-        ];
-      }
-    }
-    case 0b01: // Memory mode (8-bit displacement)
-    {
-      const disp = data[2];
-      return [
-        maybe_flip_operands(flip, {
-          name: "MOV",
-          source_operand: { type: "REGISTER", name: register },
-          dest_operand: {
-            type: "EFFECTIVE_ADDRESS+8",
-            registers: parseEffectiveAddress(f_rm),
-            disp,
-          },
-        }),
-        data.slice(3),
-      ];
-    }
-    case 0b10: // Memory mode (16-bit displacement)
-    {
-      const disp = data[2] + (data[3] << 8);
-      return [
-        maybe_flip_operands(flip, {
-          name: "MOV",
-          source_operand: { type: "REGISTER", name: register },
-          dest_operand: {
-            type: "EFFECTIVE_ADDRESS+8",
-            registers: parseEffectiveAddress(f_rm),
-            disp,
-          },
-        }),
-        data.slice(4),
-      ];
-    }
-    case 0b11: // Register mode (no displacement)
-      return [
-        maybe_flip_operands(flip, {
-          name: "MOV",
-          source_operand: { type: "REGISTER", name: register },
-          dest_operand: {
-            type: "REGISTER",
-            name: parseRegister(f_rm, isWord),
-          },
-        }),
-        data.slice(2),
-      ];
-    default:
-      return shouldNeverHappen();
-  }
-}
-
-function decode_mov_immediate_to_reg_or_mem(
-  data: Uint8Array,
-  isWord: boolean,
-): [Instruction, Uint8Array] {
-  const f_mod = (data[1] & 0b11000000) >> 6;
-  const f_rm = data[1] & 0b00000111;
-
-  switch (f_mod) {
-    case 0b00: { // Memory mode (no displacement, except if R/M=110, then 16-bit displacement)
-      return todo();
-      if (f_rm === 0b110) {
-      } else {
-      }
-      break;
-    }
-    case 0b01: // Memory mode (8-bit displacement)
-      return todo();
-    case 0b10: // Memory mode (16-bit displacement)
-      return todo();
-    case 0b11: // Register mode (no displacement)
-      return todo();
-      // return [
-      //   {
-      //     name: "MOV",
-      //     source_operand: { type: "REGISTER", name: register },
-      //     dest_operand: { type: "REGISTER", name:  },
-      //   },
-      //   data.slice(2),
-      // ];
-      // this isn't really used
-    default:
-      return shouldNeverHappen();
-  }
-}
-
-function decodeMovImmediateToRegister(
-  data: Uint8Array,
-  isWord: boolean,
-): [Instruction, Uint8Array] {
-  const register = parseRegister(data[0] & 0b111, isWord);
-  let value = data[1];
-  if (isWord) {
-    value += data[2] << 8;
-  }
-  return [{
-    name: "MOV",
-    source_operand: { type: "IMMEDIATE", value: BigInt(value) },
-    dest_operand: { type: "REGISTER", name: register },
-  }, data.slice(isWord ? 3 : 2)];
-}
-
-/**
- * Decode one instruction. Return the decoded instruction and the remainder of
- * the input data, so the rest of the data can be decoded.
- */
-function decode_instruction(data: Uint8Array): [Instruction, Uint8Array] {
-  if (data.length === 0) throw new TypeError("No data");
-  if ((data[0] & 0b11111100) === 0b10001000) {
-    const flip = Boolean(data[0] & 0b00000010);
-    const isWord = Boolean(data[0] & 0b00000001);
-    return decode_mov_register_and_memory(data, flip, isWord);
-  }
-  if ((data[0] & 0b11111110) === 0b11000110) {
-    const isWord = Boolean(data[0] & 0b00000001);
-    return decode_mov_immediate_to_reg_or_mem(data, isWord);
-  }
-  if ((data[0] & 0b11110000) === 0b10110000) {
-    const isWord = Boolean(data[0] & 0b00001000);
-    return decodeMovImmediateToRegister(data, isWord);
-  }
-
-  throw new Error(`not implemented or bad opcode ${data[0].toString(2)}`);
 }
 
 /** Returns register names */
@@ -244,13 +96,289 @@ function parseRegister(bits: number, isWord: boolean): string {
   }
 }
 
+const typcial_pattern_opcode_mnemonics: Record<number, InstructionName> = {
+  0b00000000: "ADD",
+  0b10001000: "MOV",
+  0b11000100: "MOV",
+} as const;
+
+function decode_instruction2(data: Uint8Array): [Instruction, Uint8Array] {
+  let mnemonic: InstructionName;
+  let bytes_eaten = 1;
+
+  // Check for 1-byte instructions
+  if ((data[0] & 0b11111000) === 0b01010000) {
+    return [
+      {
+        name: "PUSH",
+        source_operand: {
+          type: "REGISTER",
+          name: parseRegister(data[0] & 0b00000111, false),
+        },
+      },
+      data.subarray(bytes_eaten),
+    ];
+  }
+
+  if (
+    (data[0] & 0b11111110) === 0b00000100 ||
+    (data[0] & 0b11111110) === 0b00101100
+  ) {
+    mnemonic = (data[0] & 0b11111110) === 0b00000100 ? "ADD" : "SUB";
+    const f_w = Boolean(data[0] & 0b00000001);
+    let value = BigInt(data[1]);
+    bytes_eaten = 2;
+    if (f_w) {
+      value += BigInt(data[2]) << 8n;
+      bytes_eaten = 3;
+    }
+    return [
+      {
+        name: mnemonic,
+        dest_operand: f_w ? reg("AX") : reg("AL"),
+        source_operand: immediate(value),
+      },
+      data.subarray(bytes_eaten),
+    ];
+  }
+
+  // Check for immediate-to-register stuff
+  if ((data[0] & 0b11110000) === 0b10110000) {
+    mnemonic = "MOV";
+    const f_w = Boolean(data[0] & 0b00001000);
+    const f_reg = data[0] & 0b00000111;
+    const register = parseRegister(f_reg, f_w);
+    let value = BigInt(data[1]);
+    bytes_eaten = 2;
+    if (f_w) {
+      value += BigInt(data[2] << 8);
+      bytes_eaten = 3;
+    }
+    return [
+      {
+        name: mnemonic,
+        dest_operand: reg(register),
+        source_operand: immediate(value),
+      },
+      data.subarray(bytes_eaten),
+    ];
+  }
+
+  const opcode = data[0] & 0b11111100;
+
+  // Check for [opcode, s, w] [mod, extra, r/m] (disp-lo) (disp-hi) (data-lo) (data-hi)
+
+  if (opcode === 0b10000000 && (data[1] & 0b00111000) === 0b00000000) {
+    // Immediate to register/memory
+    mnemonic = "ADD";
+    const f_s = Boolean(data[0] & 0b00000010);
+    const f_w = Boolean(data[0] & 0b00000001);
+    const f_mod = (data[1] & 0b11000000) >> 6;
+    const f_rm = (data[1] & 0b00000111) >> 0;
+    const register = parseRegister(f_rm, f_w);
+    bytes_eaten = 2;
+
+    switch (f_mod) {
+      case 0b00: { // Memory mode (no displacement, except if R/M=110, then 16-bit displacement)
+        if (f_rm !== 0b110) {
+          let value = BigInt(data[2]);
+          bytes_eaten = 3;
+          if (f_w) {
+            value += BigInt(data[3] << 8);
+            bytes_eaten = 4;
+          }
+
+          return [
+            {
+              name: mnemonic,
+              size_modifier: f_w ? "WORD" : "BYTE",
+              dest_operand: reg(register),
+              source_operand: immediate(value),
+            },
+            data.subarray(bytes_eaten),
+          ];
+        } else {
+          let value = BigInt(data[4]);
+          bytes_eaten = 5;
+          if (f_w) {
+            value += BigInt(data[5] << 8);
+            bytes_eaten = 6;
+          }
+
+          return [
+            {
+              name: mnemonic,
+              size_modifier: f_w ? "WORD" : "BYTE",
+              source_operand: immediate(value),
+              dest_operand: {
+                type: "EFFECTIVE_ADDRESS",
+                registers: parseEffectiveAddress(f_rm),
+              },
+            },
+            data.subarray(bytes_eaten),
+          ];
+        }
+      }
+      case 0b01: // Memory mode (8-bit displacement)
+      {
+        const disp = data[2];
+        return [
+          {
+            name: mnemonic,
+            size_modifier: f_w ? "WORD" : "BYTE",
+            source_operand: { type: "REGISTER", name: register },
+            dest_operand: {
+              type: "EFFECTIVE_ADDRESS+8",
+              registers: parseEffectiveAddress(f_rm),
+              disp,
+            },
+          },
+          data.subarray(3),
+        ];
+      }
+      case 0b10: // Memory mode (16-bit displacement)
+      {
+        const disp = data[2] + (data[3] << 8);
+        let value = BigInt(data[4]);
+        bytes_eaten = 5;
+        if (!f_s && f_w) {
+          value += BigInt(data[5]) << 8n;
+          bytes_eaten = 6;
+        }
+        return [
+          {
+            name: mnemonic,
+            size_modifier: f_w ? "WORD" : "BYTE",
+            source_operand: immediate(value),
+            dest_operand: {
+              type: "EFFECTIVE_ADDRESS+16",
+              registers: parseEffectiveAddress(f_rm),
+              disp,
+            },
+          },
+          data.subarray(bytes_eaten),
+        ];
+      }
+      case 0b11: // Register mode (no displacement)
+      {
+        let value = BigInt(data[2]);
+        bytes_eaten = 3;
+        if (!f_s && f_w) {
+          value += BigInt(data[3] << 8);
+          bytes_eaten = 4;
+        }
+        return [
+          {
+            name: mnemonic,
+            size_modifier: f_w ? "WORD" : "BYTE",
+            source_operand: { type: "IMMEDIATE", value },
+            dest_operand: { type: "REGISTER", name: register },
+          },
+          data.subarray(bytes_eaten),
+        ];
+      }
+      default:
+        return shouldNeverHappen();
+    }
+  }
+
+  // Check for the typical pattern of
+  // [ . . . . . . . . ] [ . . . . . . . . ] ( . . . . . . . . ) ( . . . . . . . . ) ( . . . . . . . . ) ( . . . . . . . . )
+  //   --OP-CODE-- D W     MOD -REG- -R/M-      low disp/data      high disp/data         low data            high data
+  const f_d = Boolean(data[0] & 0b00000010);
+  const f_w = Boolean(data[0] & 0b00000001);
+  const f_mod = (data[1] & 0b11000000) >> 6;
+  const f_reg = (data[1] & 0b00111000) >> 3;
+  const f_rm = (data[1] & 0b00000111) >> 0;
+  bytes_eaten = 2;
+  if (opcode in typcial_pattern_opcode_mnemonics) {
+    mnemonic = typcial_pattern_opcode_mnemonics[opcode];
+  } else {throw new Error(
+      `Unknown data: ${binary_to_string(data.subarray(0, 5))}`,
+    );}
+  const register = parseRegister(f_reg, f_w);
+  switch (f_mod) {
+    case 0b00: { // Memory mode (no displacement, except if R/M=110, then 16-bit displacement)
+      if (f_rm === 0b110) {
+        const mem_addr = data[1] + (data[2] << 8);
+        return [
+          maybe_flip_operands(f_d, {
+            name: mnemonic,
+            dest_operand: { type: "REGISTER", name: register },
+            source_operand: { type: "MEMORY_ADDRESS", value: BigInt(mem_addr) },
+          }),
+          data.subarray(4),
+        ];
+      } else {
+        return [
+          maybe_flip_operands(f_d, {
+            name: mnemonic,
+            source_operand: { type: "REGISTER", name: register },
+            dest_operand: {
+              type: "EFFECTIVE_ADDRESS",
+              registers: parseEffectiveAddress(f_rm),
+            },
+          }),
+          data.subarray(2),
+        ];
+      }
+    }
+    case 0b01: // Memory mode (8-bit displacement)
+    {
+      const disp = data[2];
+      return [
+        maybe_flip_operands(f_d, {
+          name: mnemonic,
+          source_operand: { type: "REGISTER", name: register },
+          dest_operand: {
+            type: "EFFECTIVE_ADDRESS+8",
+            registers: parseEffectiveAddress(f_rm),
+            disp,
+          },
+        }),
+        data.subarray(3),
+      ];
+    }
+    case 0b10: // Memory mode (16-bit displacement)
+    {
+      const disp = data[2] + (data[3] << 8);
+      return [
+        maybe_flip_operands(f_d, {
+          name: mnemonic,
+          source_operand: { type: "REGISTER", name: register },
+          dest_operand: {
+            type: "EFFECTIVE_ADDRESS+8",
+            registers: parseEffectiveAddress(f_rm),
+            disp,
+          },
+        }),
+        data.subarray(4),
+      ];
+    }
+    case 0b11: // Register mode (no displacement)
+      return [
+        maybe_flip_operands(f_d, {
+          name: mnemonic,
+          source_operand: { type: "REGISTER", name: register },
+          dest_operand: {
+            type: "REGISTER",
+            name: parseRegister(f_rm, f_w),
+          },
+        }),
+        data.subarray(2),
+      ];
+    default:
+      return shouldNeverHappen();
+  }
+}
+
 /**
  * Decode 8086 machine code and yield each instruction.
  */
 export function* decode_instructions(data: Uint8Array): Generator<Instruction> {
   let rest = data;
   while (rest.length > 0) {
-    const [instruction, newRest] = decode_instruction(rest);
+    const [instruction, newRest] = decode_instruction2(rest);
     console.log(stringify_instruction(instruction));
     yield instruction;
     rest = newRest;
@@ -283,10 +411,20 @@ export function stringify_instruction(instruction: Instruction): string {
   if (instruction.source_operand) {
     operands.push(stringify_operand(instruction.source_operand));
   }
-  return [instruction.name, operands.join(", ")].join(" ");
+  const result: Array<string> = [instruction.name];
+  if (instruction.size_modifier) result.push(instruction.size_modifier);
+  result.push(operands.join(", "));
+  return result.join(" ");
+}
+
+function binary_to_string(data: Uint8Array): string {
+  const str_builder: Array<string> = [];
+  for (const num of data) {
+    str_builder.push(num.toString(2).padStart(8, "0"));
+  }
+  return str_builder.join(" ");
 }
 
 if (import.meta.main) {
   console.log("Hello");
 }
-
